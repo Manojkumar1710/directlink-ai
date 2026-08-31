@@ -7,8 +7,8 @@
  * arrays — nothing in services/ or controllers/ has to change.
  */
 
-const { v4: uuidv4 } = require('uuid');
-const { products, listings, contactLogs } = require('./mockData');
+const { v4: uuidv4 } = require("uuid");
+const { products, listings, contactLogs } = require("./mockData");
 
 // ---------- Products ----------
 
@@ -22,7 +22,14 @@ async function getProductById(productId) {
 
 // ---------- Listings ----------
 
-async function createListing({ farmer_id, product_id, region, quantity, unit, asking_price }) {
+async function createListing({
+  farmer_id,
+  product_id,
+  region,
+  quantity,
+  unit,
+  asking_price,
+}) {
   const listing = {
     id: uuidv4(),
     farmer_id,
@@ -31,7 +38,7 @@ async function createListing({ farmer_id, product_id, region, quantity, unit, as
     quantity,
     unit,
     asking_price,
-    status: 'active',
+    status: "active",
     created_at: new Date().toISOString(),
   };
   listings.push(listing);
@@ -46,12 +53,14 @@ async function getListingById(listingId) {
  * Search/filter listings. Mirrors GET /listings?product=&region=&price_max=
  * from TDD Section 6.
  */
-async function searchListings({ product, region, price_max }) {
+async function searchListings({ product, region, price_max, farmer_id }) {
   return listings.filter((l) => {
-    if (l.status !== 'active') return false;
+    if (l.status !== "active") return false;
     if (product && l.product_id !== product) return false;
-    if (region && l.region.toLowerCase() !== String(region).toLowerCase()) return false;
+    if (region && l.region.toLowerCase() !== String(region).toLowerCase())
+      return false;
     if (price_max && l.asking_price > Number(price_max)) return false;
+    if (farmer_id && String(l.farmer_id) !== String(farmer_id)) return false;
     return true;
   });
 }
