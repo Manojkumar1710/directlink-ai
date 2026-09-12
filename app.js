@@ -4,6 +4,7 @@ const cors = require('cors');
 const fakeAuth = require('./middleware/fakeAuth');
 const listingsRouter = require('./routes/listings');
 const productsRouter = require('./routes/products');
+const authRouter = require('./routes/auth');
 const { NotFoundError, ForbiddenError } = require('./services/listingService');
 
 const app = express();
@@ -15,6 +16,8 @@ app.use(express.json());
 app.get('/health', (req, res) => res.json({ status: 'ok' }));
 
 // TEMP: swap fakeAuth for Member 3's real auth middleware when it's ready.
+app.use('/auth', authRouter);
+
 app.use(fakeAuth);
 
 app.use('/products', productsRouter);
