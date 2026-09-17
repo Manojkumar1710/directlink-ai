@@ -13,6 +13,7 @@ const {
 const {
   generateAccessToken,
   generateRefreshToken,
+  verifyRefreshToken,
 } = require("../services/tokenService");
 
 const { findOrCreateUser } = require("../services/userService");
@@ -213,6 +214,44 @@ router.post("/verify-otp", async (req, res) => {
     return res.status(500).json({
       error: "InternalServerError",
       message: "Something went wrong during OTP verification",
+    });
+  }
+});
+// =====================================================
+// REFRESH ACCESS TOKEN
+// =====================================================
+
+router.post("/refresh", (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({
+        error: "ValidationError",
+        message: "refreshToken is required",
+      });
+    }
+
+    const decoded = verifyRefreshToken(refreshToken);
+    const user = refreshTokens.get(refreshToken);
+
+    if (!user || user.id !== decoded.id) {
+      return res.status(401).json({
+        error: "InvalidRefreshToken",
+        message: "Refresh token is invalid or revoked",
+      });
+    }
+
+    const accessToken = generateAccessToken(user);
+
+    return res.status(200).json({
+      message: "Access token refreshed successfully",
+      accessToken,
+    });
+  } catch (err) {
+    return res.status(401).json({
+      error: "InvalidRefreshToken",
+      message: "Refresh token is expired or invalid",
     });
   }
 });
