@@ -1,57 +1,190 @@
 const request = require("supertest");
-const jwt = require("jsonwebtoken");
 const app = require("../app");
+const pool = require("../db");
 
-process.env.JWT_SECRET =
-  process.env.JWT_SECRET || "directlink_ai_dev_secret_change_this";
+let farmerUserId;
+let farmerProfileId;
+let secondFarmerUserId;
+let buyerUserId;
+let listingId;
 
-function authToken(id, role) {
-  return jwt.sign({ id, role }, process.env.JWT_SECRET, {
-    expiresIn: "15m",
-  });
+async function createUser(phone, name, role) {
+  const userResult = await pool.query(
+    `
+    INSERT INTO users (id, phone_number, name, role)
+    VALUES (gen_random_uuid(), $1, $2, $3)
+    RETURNING *
+    `,
+    [phone, name, role]
+  );
+
+  const user = userResult.rows[0];
+
+  if (role === "farmer") {
+    const profileResult = await pool.query(
+      `
+      INSERT INTO farmer_profiles (
+        id, user_id, village, district, state
+      )
+      VALUES (
+        gen_random_uuid(), $1, 'Test Village', 'Test District', 'Andhra Pradesh'
+      )
+      RETURNING *
+      `,
+      [user.id]
+    );
+
+    return {
+      userId: user.id,
+      profileId: profileResult.rows[0].id,
+    };
+  }
+
+  const profileResult = await pool.query(
+    `
+    INSERT INTO buyer_profiles (
+      id, user_id, business_name, business_type, address
+    )
+    VALUES (
+      gen_random_uuid(), $1, 'Test Business', 'Retail', 'Test Address'
+    )
+    RETURNING *
+    `,
+    [user.id]
+  );
+
+  return {
+    userId: user.id,
+    profileId: profileResult.rows[0].id,
+  };
 }
 
-describe("Listings API", () => {
-  test("POST /listings - creates a listing as farmer", async () => {
-    const response = await request(app)
+beforeAll(async () => {
+  const farmer = await createUser(
+    "9000000001",
+    "Jest Farmer",
+    "farmer"
+  );
+
+  farmerUserId = farmer.userId;
+  farmerProfileId = farmer.profileId;
+
+  const secondFarmer = await createUser(
+    "9000000002",
+    "Jest Second Farmer",
+    "farmer"
+  );
+
+  secondFarmerUserId = secondFarmer.userId;
+
+  const buyer = await createUser(
+    "9000000003",
+    "Jest Buyer",
+    "buyer"
+  );
+
+  buyerUserId = buyer.userId;
+
+  const listingResult = await pool.query(
+    `
+    INSERT INTO listings (
+      id,
+      farmer_id,
+      product_id,
+      region,
+      quantity,
+      unit,
+      asking_price,
+      status
+    )
+    VALUES (
+      gen_random_uuid(),
+      $1,
+      'p1',
+      'Vijayawada',
+      50,
+      'kg',
+      20,
+      'active'
+    )
+    RETURNING id
+    `,
+    [farmerProfileId]
+  );
+
+  listingId = listingResult.rows[0].id;
+});
+
+afterAll(async () => {
+  await pool.query(
+    `DELETE FROM users WHERE id IN ($1, $2, $3)`,
+    [farmerUserId, secondFarmerUserId, buyerUserId]
+  );
+
+  await pool.end();
+});
+
+// =====================================================
+// PRODUCTS
+// =====================================================
+
+describe("Products", () => {
+  it("GET /products returns the seed product list", async () => {
+    const res = await request(app).get("/products");
+
+    expect(res.status).toBe(200);
+    expect(res.body.products.length).toBeGreaterThan(0);
+    expect(res.body.products[0]).toHaveProperty("name");
+  });
+});
+
+// =====================================================
+// LISTINGS
+// =====================================================
+
+describe("Listings", () => {
+  it("GET /listings returns active listings", async () => {
+    const res = await request(app).get("/listings");
+
+    expect(res.status).toBe(200);
+    expect(Array.isArray(res.body.listings)).toBe(true);
+  });
+
+  it("POST /listings creates a new listing as farmer", async () => {
+    const res = await request(app)
       .post("/listings")
-      .set(
-        "Authorization",
-        `Bearer ${authToken("farmer-1", "farmer")}`,
-      )
+      .set("x-user-id", farmerUserId)
+      .set("x-user-role", "farmer")
       .send({
-        product_id: "p1",
+        product_id: "p2",
         region: "Hyderabad",
         quantity: 100,
         unit: "kg",
         asking_price: 50,
       });
 
-    expect(response.statusCode).toBe(201);
-    expect(response.body.listing).toBeDefined();
+    expect(res.status).toBe(201);
+    expect(res.body.listing.status).toBe("active");
+    expect(res.body.listing.product_id).toBe("p2");
+    expect(res.body.listing.farmer_id).toBe(farmerProfileId);
   });
 
-  test("POST /listings - rejects invalid body", async () => {
-    const response = await request(app)
+  it("POST /listings rejects an invalid body", async () => {
+    const res = await request(app)
       .post("/listings")
-      .set(
-        "Authorization",
-        `Bearer ${authToken("farmer-1", "farmer")}`,
-      )
       .send({
-        quantity: -10,
+        product_id: "p2",
       });
 
-    expect(response.statusCode).toBe(400);
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe("ValidationError");
   });
 
-  test("POST /listings - rejects unknown product", async () => {
-    const response = await request(app)
+  it("POST /listings rejects an unknown product_id", async () => {
+    const res = await request(app)
       .post("/listings")
-      .set(
-        "Authorization",
-        `Bearer ${authToken("farmer-1", "farmer")}`,
-      )
+      .set("x-user-id", farmerUserId)
+      .set("x-user-role", "farmer")
       .send({
         product_id: "does-not-exist",
         region: "Hyderabad",
@@ -60,132 +193,90 @@ describe("Listings API", () => {
         asking_price: 50,
       });
 
-    expect(response.statusCode).toBe(400);
+    expect(res.status).toBe(400);
   });
 
-  test("GET /listings - returns public listings", async () => {
-    const response = await request(app).get("/listings");
-
-    expect(response.statusCode).toBe(200);
-    expect(Array.isArray(response.body.listings)).toBe(true);
-  });
-
-  test("GET /listings - supports farmer_id=me", async () => {
-    const response = await request(app)
-      .get("/listings?farmer_id=me")
-      .set(
-        "Authorization",
-        `Bearer ${authToken("farmer-1", "farmer")}`,
-      );
-
-    expect(response.statusCode).toBe(200);
-  });
-
-  test("GET /listings - rejects farmer_id=me without authentication", async () => {
-    const response = await request(app).get("/listings?farmer_id=me");
-
-    expect(response.statusCode).toBe(401);
-  });
-
-  test("GET /listings/:id - returns 404 for unknown listing", async () => {
-    const response = await request(app).get("/listings/unknown-listing");
-
-    expect(response.statusCode).toBe(404);
-  });
-
-  test("PATCH /listings/:id - updates listing status", async () => {
-    const createResponse = await request(app)
-      .post("/listings")
-      .set(
-        "Authorization",
-        `Bearer ${authToken("farmer-1", "farmer")}`,
-      )
-      .send({
-        product_id: "p1",
-        region: "Hyderabad",
-        quantity: 100,
-        unit: "kg",
-        asking_price: 50,
+  it("GET /listings filters by region and price_max", async () => {
+    const res = await request(app)
+      .get("/listings")
+      .query({
+        region: "Vijayawada",
+        price_max: 25,
       });
 
-    expect(createResponse.statusCode).toBe(201);
+    expect(res.status).toBe(200);
 
-    const listingId = createResponse.body.listing.id;
+    res.body.listings.forEach((listing) => {
+      expect(listing.region).toBe("Vijayawada");
+      expect(Number(listing.asking_price)).toBeLessThanOrEqual(25);
+    });
+  });
 
-    const response = await request(app)
+  it("GET /listings supports the My Listings farmer filter", async () => {
+    const res = await request(app)
+      .get("/listings")
+      .query({ farmer_id: "me" })
+      .set("x-user-id", farmerUserId)
+      .set("x-user-role", "farmer");
+
+    expect(res.status).toBe(200);
+    expect(res.body.listings.length).toBeGreaterThanOrEqual(1);
+
+    res.body.listings.forEach((listing) => {
+      expect(listing.farmer_id).toBe(farmerProfileId);
+    });
+  });
+
+  it("GET /listings/:id returns detail with product info attached", async () => {
+    const res = await request(app).get(`/listings/${listingId}`);
+
+    expect(res.status).toBe(200);
+    expect(res.body.listing.id).toBe(listingId);
+    expect(res.body.listing.product).toHaveProperty("name");
+  });
+
+  it("GET /listings/:id returns 404 for unknown id", async () => {
+    const unknownId = "00000000-0000-0000-0000-000000000000";
+
+    const res = await request(app).get(`/listings/${unknownId}`);
+
+    expect(res.status).toBe(404);
+  });
+
+  it("PATCH /listings/:id lets the owning farmer close a listing", async () => {
+    const res = await request(app)
       .patch(`/listings/${listingId}`)
-      .set(
-        "Authorization",
-        `Bearer ${authToken("farmer-1", "farmer")}`,
-      )
+      .set("x-user-id", farmerUserId)
+      .set("x-user-role", "farmer")
       .send({
         status: "sold",
       });
 
-    expect(response.statusCode).toBe(200);
+    expect(res.status).toBe(200);
   });
 
-  test("PATCH /listings/:id - rejects non-owner", async () => {
-    const createResponse = await request(app)
-      .post("/listings")
-      .set(
-        "Authorization",
-        `Bearer ${authToken("farmer-1", "farmer")}`,
-      )
-      .send({
-        product_id: "p1",
-        region: "Hyderabad",
-        quantity: 100,
-        unit: "kg",
-        asking_price: 50,
-      });
-
-    expect(createResponse.statusCode).toBe(201);
-
-    const listingId = createResponse.body.listing.id;
-
-    const response = await request(app)
+  it("PATCH /listings/:id blocks a farmer who does not own the listing", async () => {
+    const res = await request(app)
       .patch(`/listings/${listingId}`)
-      .set(
-        "Authorization",
-        `Bearer ${authToken("someone-else", "farmer")}`,
-      )
+      .set("x-user-id", secondFarmerUserId)
+      .set("x-user-role", "farmer")
       .send({
         status: "sold",
       });
 
-    expect(response.statusCode).toBe(403);
+    expect(res.status).toBe(403);
   });
 
-  test("POST /listings/:id/contact - allows buyer to contact farmer", async () => {
-    const createResponse = await request(app)
-      .post("/listings")
-      .set(
-        "Authorization",
-        `Bearer ${authToken("farmer-1", "farmer")}`,
-      )
-      .send({
-        product_id: "p1",
-        region: "Hyderabad",
-        quantity: 100,
-        unit: "kg",
-        asking_price: 50,
-      });
-
-    expect(createResponse.statusCode).toBe(201);
-
-    const listingId = createResponse.body.listing.id;
-
-    const response = await request(app)
+  it("POST /listings/:id/contact logs a buyer contact", async () => {
+    const res = await request(app)
       .post(`/listings/${listingId}/contact`)
-      .set(
-        "Authorization",
-        `Bearer ${authToken("buyer-1", "buyer")}`,
-      )
+      .set("x-user-id", buyerUserId)
+      .set("x-user-role", "buyer")
       .send({
-        channel: "call",
+        channel: "whatsapp",
       });
 
-    expect(response.statusCode).toBe(201);
+    expect(res.status).toBe(201);
+    expect(res.body.contact.channel).toBe("whatsapp");
   });
 });

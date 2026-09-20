@@ -1,5 +1,6 @@
 const express = require("express");
 const { randomUUID } = require("crypto");
+
 const pool = require("../db");
 
 const router = express.Router();
@@ -17,9 +18,13 @@ const {
 } = require("../services/tokenService");
 
 const { findOrCreateUser } = require("../services/userService");
+
 const { refreshTokens } = require("../data/authStore");
 
-const { sendSMSOTP, sendWhatsAppOTP } = require("../services/twilioService");
+const {
+  sendSMSOTP,
+  sendWhatsAppOTP,
+} = require("../services/twilioService");
 
 // =====================================================
 // REGISTER USER
@@ -132,12 +137,16 @@ router.post("/register", async (req, res, next) => {
 });
 
 // =====================================================
-// REQUEST OTP THROUGH TWILIO WHATSAPP
+// REQUEST OTP THROUGH TWILIO
 // =====================================================
 
 router.post("/request-otp", async (req, res) => {
   try {
-   const { phone, role, otpMethod = "whatsapp" } = req.body;
+    const {
+      phone,
+      role,
+      otpMethod = "whatsapp",
+    } = req.body;
 
     if (!phone || !/^\d{10}$/.test(phone)) {
       return res.status(400).json({
@@ -153,29 +162,36 @@ router.post("/request-otp", async (req, res) => {
       });
     }
 
+    if (!["sms", "whatsapp"].includes(otpMethod)) {
+      return res.status(400).json({
+        error: "InvalidOtpMethod",
+        message: "otpMethod must be sms or whatsapp",
+      });
+    }
+
     const otp = generateOtp();
 
     // Save OTP in the existing OTP store
     saveOtp(phone, otp, role);
 
-    // Send OTP through Twilio WhatsApp
-  if (otpMethod === "sms") {
-  await sendSMSOTP(phone, otp);
-} else {
-  await sendWhatsAppOTP(phone, otp);
-}
+    // Send OTP through Twilio
+    if (otpMethod === "sms") {
+      await sendSMSOTP(phone, otp);
+    } else {
+      await sendWhatsAppOTP(phone, otp);
+    }
 
-    console.log(`WhatsApp OTP sent to ${phone}`);
+    console.log(`${otpMethod.toUpperCase()} OTP sent to ${phone}`);
 
     return res.status(200).json({
-      message: "OTP sent successfully through WhatsApp",
+      message: `OTP sent successfully through ${otpMethod}`,
     });
   } catch (err) {
-    console.error("WhatsApp OTP sending error:", err);
+    console.error("OTP sending error:", err);
 
     return res.status(500).json({
       error: "OtpSendingFailed",
-      message: "Unable to send OTP through WhatsApp",
+      message: "Unable to send OTP",
     });
   }
 });
@@ -254,6 +270,7 @@ router.post("/refresh", (req, res) => {
     }
 
     const decoded = verifyRefreshToken(refreshToken);
+
     const user = refreshTokens.get(refreshToken);
 
     if (!user || user.id !== decoded.id) {

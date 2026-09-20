@@ -12,13 +12,13 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Authentication routes
-app.use('/auth', authRouter);
-
 // Health check
 app.get('/health', (req, res) => {
   res.json({ status: 'ok' });
 });
+
+// Authentication routes
+app.use('/auth', authRouter);
 
 // API routes
 app.use('/products', productsRouter);
@@ -49,7 +49,6 @@ app.use((err, req, res, next) => {
   }
 
   const status = err.status || 500;
-
   console.error(err);
 
   res.status(status).json({

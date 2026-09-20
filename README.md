@@ -73,11 +73,87 @@ tests/                     Supertest integration tests
 whatever verifies their session token and sets `req.user = { id, role }`.
 Nothing downstream changes — every controller already expects that shape.
 
-**Real Database (Member 5):** rewrite the function bodies in
-`data/repository.js` to use Prisma/Sequelize against Postgres instead of
-the in-memory arrays in `data/mockData.js`. The function signatures
-(`createListing`, `searchListings`, `getListingById`, etc.) should stay the
-same so `services/listingService.js` doesn't need to change.
+**Real Database (Member 5):**
+## PostgreSQL Database — Member 5
+
+The Listings/API service is connected to a real **PostgreSQL 15** database using Docker.
+
+### Database Tables
+
+* `users` — Farmer and buyer accounts
+* `farmer_profiles` — Farmer details
+* `buyer_profiles` — Buyer details
+* `products` — Product/crop information
+* `price_references` — Regional price references
+* `listings` — Farmer product listings
+* `contact_logs` — Buyer contact records
+
+Database schema:
+
+```text
+database.sql
+```
+
+### Run Database
+
+Start the API and PostgreSQL:
+
+```bash
+docker compose up -d
+```
+
+Check containers:
+
+```bash
+docker ps
+```
+
+### View Database
+
+Open PostgreSQL:
+
+```bash
+docker exec -it directlink-db psql -U user -d urban_db
+```
+
+Show tables:
+
+```sql
+\dt
+```
+
+View listings:
+
+```sql
+SELECT * FROM listings;
+```
+
+View products:
+
+```sql
+SELECT * FROM products;
+```
+
+### Testing
+
+The API is tested with the real PostgreSQL database.
+
+```bash
+docker compose exec api npm test
+```
+
+Current result:
+
+```text
+12 tests passed
+```
+
+All database queries are handled through:
+
+```text
+data/repository.js
+```
+
 
 **Pricing Service (whoever owns `GET /prices`):** not part of this module.
 When it's ready, the Farmer module (frontend) calls it directly to
@@ -89,3 +165,6 @@ here.
 Free tier on Render or Railway works fine for demo scale. Set `PORT` from
 the platform's env var (already wired via `process.env.PORT`), and point
 `DATABASE_URL` at the real Postgres instance once Member 5's schema is live.
+
+
+

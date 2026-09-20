@@ -3,136 +3,122 @@
 -- ============================================
 
 -- 1. USERS
-create table if not exists users (
-   id           uuid primary key,
-   phone_number varchar(20) unique not null,
-   name         varchar(100) not null,
-   role         varchar(20) not null check ( role in ( 'farmer',
-                                               'buyer' ) ),
-   created_at   timestamptz not null default now()
+CREATE TABLE IF NOT EXISTS users (
+    id UUID PRIMARY KEY,
+    phone_number VARCHAR(20) UNIQUE NOT NULL,
+    name VARCHAR(100) NOT NULL,
+    role VARCHAR(20) NOT NULL CHECK (
+        role IN ('farmer', 'buyer')
+    ),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 2. FARMER PROFILES
-create table if not exists farmer_profiles (
-   id       uuid primary key,
-   user_id  uuid unique not null
-      references users ( id )
-         on delete cascade,
-   village  varchar(100),
-   district varchar(100),
-   state    varchar(100),
-   geo_lat  numeric,
-   geo_lng  numeric
+CREATE TABLE IF NOT EXISTS farmer_profiles (
+    id UUID PRIMARY KEY,
+    user_id UUID UNIQUE NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+    village VARCHAR(100),
+    district VARCHAR(100),
+    state VARCHAR(100),
+    geo_lat NUMERIC,
+    geo_lng NUMERIC
 );
 
 -- 3. BUYER PROFILES
-create table if not exists buyer_profiles (
-   id            uuid primary key,
-   user_id       uuid unique not null
-      references users ( id )
-         on delete cascade,
-   business_name varchar(150),
-   business_type varchar(100),
-   address       text,
-   geo_lat       numeric,
-   geo_lng       numeric
+CREATE TABLE IF NOT EXISTS buyer_profiles (
+    id UUID PRIMARY KEY,
+    user_id UUID UNIQUE NOT NULL
+        REFERENCES users(id)
+        ON DELETE CASCADE,
+    business_name VARCHAR(150),
+    business_type VARCHAR(100),
+    address TEXT,
+    geo_lat NUMERIC,
+    geo_lng NUMERIC
 );
 
 -- 4. PRODUCTS
-create table if not exists products (
-   id       varchar(50) primary key,
-   name     varchar(100) not null,
-   category varchar(100) not null,
-   unit     varchar(20) not null check ( unit in ( 'kg',
-                                               'dozen',
-                                               'litre' ) ),
-   icon_url text
+CREATE TABLE IF NOT EXISTS products (
+    id VARCHAR(50) PRIMARY KEY,
+    name VARCHAR(100) NOT NULL,
+    category VARCHAR(100) NOT NULL,
+    unit VARCHAR(20) NOT NULL CHECK (
+        unit IN ('kg', 'dozen', 'litre')
+    ),
+    icon_url TEXT
 );
 
 -- 5. PRICE REFERENCES
-create table if not exists price_references (
-   id             uuid primary key,
-   product_id     varchar(50) not null
-      references products ( id )
-         on delete cascade,
-   region         varchar(100) not null,
-   price_per_unit numeric not null,
-   source         varchar(150),
-   updated_at     timestamptz not null default now()
+CREATE TABLE IF NOT EXISTS price_references (
+    id UUID PRIMARY KEY,
+    product_id VARCHAR(50) NOT NULL
+        REFERENCES products(id)
+        ON DELETE CASCADE,
+    region VARCHAR(100) NOT NULL,
+    price_per_unit NUMERIC NOT NULL,
+    source VARCHAR(150),
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 6. LISTINGS
-create table if not exists listings (
-   id           uuid primary key,
-   farmer_id    uuid not null
-      references farmer_profiles ( id )
-         on delete cascade,
-   product_id   varchar(50) not null
-      references products ( id ),
-      region varchar(100),
-unit varchar(20),
-   quantity     numeric not null,
-   asking_price numeric not null,
-   status       varchar(20) not null default 'active' check ( status in ( 'active',
-                                                                    'sold',
-                                                                    'closed' ) ),
-   created_at   timestamptz not null default now()
+CREATE TABLE IF NOT EXISTS listings (
+    id UUID PRIMARY KEY,
+    farmer_id UUID NOT NULL
+        REFERENCES farmer_profiles(id)
+        ON DELETE CASCADE,
+    product_id VARCHAR(50) NOT NULL
+        REFERENCES products(id),
+    region VARCHAR(100),
+    unit VARCHAR(20),
+    quantity NUMERIC NOT NULL,
+    asking_price NUMERIC NOT NULL,
+    status VARCHAR(20) NOT NULL DEFAULT 'active' CHECK (
+        status IN ('active', 'sold', 'closed')
+    ),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 -- 7. CONTACT LOGS
-create table if not exists contact_logs (
-   id           uuid primary key,
-   listing_id   uuid not null
-      references listings ( id )
-         on delete cascade,
-   buyer_id     uuid not null
-      references buyer_profiles ( id )
-         on delete cascade,
-   contacted_at timestamptz not null default now(),
-   channel      varchar(20) not null check ( channel in ( 'call',
-                                                     'whatsapp' ) )
+CREATE TABLE IF NOT EXISTS contact_logs (
+    id UUID PRIMARY KEY,
+    listing_id UUID NOT NULL
+        REFERENCES listings(id)
+        ON DELETE CASCADE,
+    buyer_id UUID NOT NULL
+        REFERENCES buyer_profiles(id)
+        ON DELETE CASCADE,
+    contacted_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    channel VARCHAR(20) NOT NULL CHECK (
+        channel IN ('call', 'whatsapp')
+    )
 );
 
 -- ============================================
 -- INDEXES
 -- ============================================
 
-create index if not exists idx_farmer_profiles_user_id on
-   farmer_profiles (
-      user_id
-   );
+CREATE INDEX IF NOT EXISTS idx_farmer_profiles_user_id
+ON farmer_profiles(user_id);
 
-create index if not exists idx_buyer_profiles_user_id on
-   buyer_profiles (
-      user_id
-   );
+CREATE INDEX IF NOT EXISTS idx_buyer_profiles_user_id
+ON buyer_profiles(user_id);
 
-create index if not exists idx_price_references_product_id on
-   price_references (
-      product_id
-   );
+CREATE INDEX IF NOT EXISTS idx_price_references_product_id
+ON price_references(product_id);
 
-create index if not exists idx_listings_farmer_id on
-   listings (
-      farmer_id
-   );
+CREATE INDEX IF NOT EXISTS idx_listings_farmer_id
+ON listings(farmer_id);
 
-create index if not exists idx_listings_product_id on
-   listings (
-      product_id
-   );
+CREATE INDEX IF NOT EXISTS idx_listings_product_id
+ON listings(product_id);
 
-create index if not exists idx_listings_status on
-   listings (
-      status
-   );
+CREATE INDEX IF NOT EXISTS idx_listings_status
+ON listings(status);
 
-create index if not exists idx_contact_logs_listing_id on
-   contact_logs (
-      listing_id
-   );
+CREATE INDEX IF NOT EXISTS idx_contact_logs_listing_id
+ON contact_logs(listing_id);
 
-create index if not exists idx_contact_logs_buyer_id on
-   contact_logs (
-      buyer_id
-   );
+CREATE INDEX IF NOT EXISTS idx_contact_logs_buyer_id
+ON contact_logs(buyer_id);
