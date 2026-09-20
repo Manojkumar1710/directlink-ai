@@ -1,5 +1,6 @@
 const express = require("express");
 const { randomUUID } = require("crypto");
+
 const pool = require("../db");
 
 const router = express.Router();
@@ -13,10 +14,17 @@ const {
 const {
   generateAccessToken,
   generateRefreshToken,
+  verifyRefreshToken,
 } = require("../services/tokenService");
 
 const { findOrCreateUser } = require("../services/userService");
+
 const { refreshTokens } = require("../data/authStore");
+
+const {
+  sendSMSOTP,
+  sendWhatsAppOTP,
+} = require("../services/twilioService");
 
 // =====================================================
 // REGISTER USER
@@ -129,35 +137,63 @@ router.post("/register", async (req, res, next) => {
 });
 
 // =====================================================
-// REQUEST OTP
+// REQUEST OTP THROUGH TWILIO
 // =====================================================
 
-router.post("/request-otp", (req, res) => {
-  const { phone, role } = req.body;
+router.post("/request-otp", async (req, res) => {
+  try {
+    const {
+      phone,
+      role,
+      otpMethod = "whatsapp",
+    } = req.body;
 
-  if (!phone || !/^\d{10}$/.test(phone)) {
-    return res.status(400).json({
-      error: "Invalid phone number",
+    if (!phone || !/^\d{10}$/.test(phone)) {
+      return res.status(400).json({
+        error: "InvalidPhoneNumber",
+        message: "Phone number must contain exactly 10 digits",
+      });
+    }
+
+    if (!["farmer", "buyer"].includes(role)) {
+      return res.status(400).json({
+        error: "InvalidRole",
+        message: "Role must be farmer or buyer",
+      });
+    }
+
+    if (!["sms", "whatsapp"].includes(otpMethod)) {
+      return res.status(400).json({
+        error: "InvalidOtpMethod",
+        message: "otpMethod must be sms or whatsapp",
+      });
+    }
+
+    const otp = generateOtp();
+
+    // Save OTP in the existing OTP store
+    saveOtp(phone, otp, role);
+
+    // Send OTP through Twilio
+    if (otpMethod === "sms") {
+      await sendSMSOTP(phone, otp);
+    } else {
+      await sendWhatsAppOTP(phone, otp);
+    }
+
+    console.log(`${otpMethod.toUpperCase()} OTP sent to ${phone}`);
+
+    return res.status(200).json({
+      message: `OTP sent successfully through ${otpMethod}`,
+    });
+  } catch (err) {
+    console.error("OTP sending error:", err);
+
+    return res.status(500).json({
+      error: "OtpSendingFailed",
+      message: "Unable to send OTP",
     });
   }
-
-  if (!["farmer", "buyer"].includes(role)) {
-    return res.status(400).json({
-      error: "Role must be farmer or buyer",
-    });
-  }
-
-  const otp = generateOtp();
-
-  saveOtp(phone, otp, role);
-
-  // Development only.
-  // Replace this with an SMS provider in production.
-  console.log(`OTP for ${phone}: ${otp}`);
-
-  return res.status(200).json({
-    message: "OTP generated successfully",
-  });
 });
 
 // =====================================================
@@ -175,7 +211,8 @@ router.post("/verify-otp", async (req, res) => {
       !/^\d{6}$/.test(otp)
     ) {
       return res.status(400).json({
-        error: "Invalid phone number or OTP",
+        error: "InvalidInput",
+        message: "Invalid phone number or OTP",
       });
     }
 
@@ -183,7 +220,7 @@ router.post("/verify-otp", async (req, res) => {
 
     if (!result.success) {
       return res.status(401).json({
-        error: "OTP verification failed",
+        error: "OtpVerificationFailed",
         message: result.message,
       });
     }
@@ -213,6 +250,46 @@ router.post("/verify-otp", async (req, res) => {
     return res.status(500).json({
       error: "InternalServerError",
       message: "Something went wrong during OTP verification",
+    });
+  }
+});
+
+// =====================================================
+// REFRESH ACCESS TOKEN
+// =====================================================
+
+router.post("/refresh", (req, res) => {
+  try {
+    const { refreshToken } = req.body;
+
+    if (!refreshToken) {
+      return res.status(400).json({
+        error: "ValidationError",
+        message: "refreshToken is required",
+      });
+    }
+
+    const decoded = verifyRefreshToken(refreshToken);
+
+    const user = refreshTokens.get(refreshToken);
+
+    if (!user || user.id !== decoded.id) {
+      return res.status(401).json({
+        error: "InvalidRefreshToken",
+        message: "Refresh token is invalid or revoked",
+      });
+    }
+
+    const accessToken = generateAccessToken(user);
+
+    return res.status(200).json({
+      message: "Access token refreshed successfully",
+      accessToken,
+    });
+  } catch (err) {
+    return res.status(401).json({
+      error: "InvalidRefreshToken",
+      message: "Refresh token is expired or invalid",
     });
   }
 });

@@ -26,7 +26,12 @@ function generateRefreshToken(user) {
   );
 }
 
+function verifyRefreshToken(token) {
+  return jwt.verify(token, process.env.JWT_SECRET);
+}
+
 module.exports = {
   generateAccessToken,
   generateRefreshToken,
+  verifyRefreshToken,
 };
