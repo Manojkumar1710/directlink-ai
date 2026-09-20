@@ -19,6 +19,8 @@ const {
 const { findOrCreateUser } = require("../services/userService");
 const { refreshTokens } = require("../data/authStore");
 
+const { sendSMSOTP, sendWhatsAppOTP } = require("../services/twilioService");
+
 // =====================================================
 // REGISTER USER
 // =====================================================
@@ -130,35 +132,52 @@ router.post("/register", async (req, res, next) => {
 });
 
 // =====================================================
-// REQUEST OTP
+// REQUEST OTP THROUGH TWILIO WHATSAPP
 // =====================================================
 
-router.post("/request-otp", (req, res) => {
-  const { phone, role } = req.body;
+router.post("/request-otp", async (req, res) => {
+  try {
+   const { phone, role, otpMethod = "whatsapp" } = req.body;
 
-  if (!phone || !/^\d{10}$/.test(phone)) {
-    return res.status(400).json({
-      error: "Invalid phone number",
+    if (!phone || !/^\d{10}$/.test(phone)) {
+      return res.status(400).json({
+        error: "InvalidPhoneNumber",
+        message: "Phone number must contain exactly 10 digits",
+      });
+    }
+
+    if (!["farmer", "buyer"].includes(role)) {
+      return res.status(400).json({
+        error: "InvalidRole",
+        message: "Role must be farmer or buyer",
+      });
+    }
+
+    const otp = generateOtp();
+
+    // Save OTP in the existing OTP store
+    saveOtp(phone, otp, role);
+
+    // Send OTP through Twilio WhatsApp
+  if (otpMethod === "sms") {
+  await sendSMSOTP(phone, otp);
+} else {
+  await sendWhatsAppOTP(phone, otp);
+}
+
+    console.log(`WhatsApp OTP sent to ${phone}`);
+
+    return res.status(200).json({
+      message: "OTP sent successfully through WhatsApp",
+    });
+  } catch (err) {
+    console.error("WhatsApp OTP sending error:", err);
+
+    return res.status(500).json({
+      error: "OtpSendingFailed",
+      message: "Unable to send OTP through WhatsApp",
     });
   }
-
-  if (!["farmer", "buyer"].includes(role)) {
-    return res.status(400).json({
-      error: "Role must be farmer or buyer",
-    });
-  }
-
-  const otp = generateOtp();
-
-  saveOtp(phone, otp, role);
-
-  // Development only.
-  // Replace this with an SMS provider in production.
-  console.log(`OTP for ${phone}: ${otp}`);
-
-  return res.status(200).json({
-    message: "OTP generated successfully",
-  });
 });
 
 // =====================================================
@@ -176,7 +195,8 @@ router.post("/verify-otp", async (req, res) => {
       !/^\d{6}$/.test(otp)
     ) {
       return res.status(400).json({
-        error: "Invalid phone number or OTP",
+        error: "InvalidInput",
+        message: "Invalid phone number or OTP",
       });
     }
 
@@ -184,7 +204,7 @@ router.post("/verify-otp", async (req, res) => {
 
     if (!result.success) {
       return res.status(401).json({
-        error: "OTP verification failed",
+        error: "OtpVerificationFailed",
         message: result.message,
       });
     }
@@ -217,6 +237,7 @@ router.post("/verify-otp", async (req, res) => {
     });
   }
 });
+
 // =====================================================
 // REFRESH ACCESS TOKEN
 // =====================================================
