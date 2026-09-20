@@ -1,12 +1,22 @@
 const request = require("supertest");
+const jwt = require("jsonwebtoken");
 const app = require("../app");
 const pool = require("../db");
+
+process.env.JWT_SECRET =
+  process.env.JWT_SECRET || "directlink_ai_dev_secret_change_this";
 
 let farmerUserId;
 let farmerProfileId;
 let secondFarmerUserId;
 let buyerUserId;
 let listingId;
+
+function authToken(id, role) {
+  return jwt.sign({ id, role }, process.env.JWT_SECRET, {
+    expiresIn: "15m",
+  });
+}
 
 async function createUser(phone, name, role) {
   const userResult = await pool.query(
@@ -60,11 +70,7 @@ async function createUser(phone, name, role) {
 }
 
 beforeAll(async () => {
-  const farmer = await createUser(
-    "9000000001",
-    "Jest Farmer",
-    "farmer"
-  );
+  const farmer = await createUser("9000000001", "Jest Farmer", "farmer");
 
   farmerUserId = farmer.userId;
   farmerProfileId = farmer.profileId;
@@ -77,11 +83,7 @@ beforeAll(async () => {
 
   secondFarmerUserId = secondFarmer.userId;
 
-  const buyer = await createUser(
-    "9000000003",
-    "Jest Buyer",
-    "buyer"
-  );
+  const buyer = await createUser("9000000003", "Jest Buyer", "buyer");
 
   buyerUserId = buyer.userId;
 
@@ -116,10 +118,11 @@ beforeAll(async () => {
 });
 
 afterAll(async () => {
-  await pool.query(
-    `DELETE FROM users WHERE id IN ($1, $2, $3)`,
-    [farmerUserId, secondFarmerUserId, buyerUserId]
-  );
+  await pool.query(`DELETE FROM users WHERE id IN ($1, $2, $3)`, [
+    farmerUserId,
+    secondFarmerUserId,
+    buyerUserId,
+  ]);
 
   await pool.end();
 });
@@ -145,8 +148,7 @@ describe("Listings", () => {
   it("POST /listings creates a new listing as farmer", async () => {
     const res = await request(app)
       .post("/listings")
-      .set("x-user-id", farmerUserId)
-      .set("x-user-role", "farmer")
+      .set("Authorization", "Bearer " + authToken(farmerUserId, "farmer"))
       .send({
         product_id: "p2",
         region: "Vijayawada",
@@ -164,6 +166,7 @@ describe("Listings", () => {
   it("POST /listings rejects an invalid body", async () => {
     const res = await request(app)
       .post("/listings")
+      .set("Authorization", "Bearer " + authToken(farmerUserId, "farmer"))
       .send({
         product_id: "p2",
       });
@@ -175,6 +178,7 @@ describe("Listings", () => {
   it("POST /listings rejects an unknown product_id", async () => {
     const res = await request(app)
       .post("/listings")
+      .set("Authorization", "Bearer " + authToken(farmerUserId, "farmer"))
       .send({
         product_id: "does-not-exist",
         region: "Guntur",
@@ -206,8 +210,7 @@ describe("Listings", () => {
     const res = await request(app)
       .get("/listings")
       .query({ farmer_id: "me" })
-      .set("x-user-id", farmerUserId)
-      .set("x-user-role", "farmer");
+      .set("Authorization", "Bearer " + authToken(farmerUserId, "farmer"));
 
     expect(res.status).toBe(200);
     expect(res.body.listings.length).toBeGreaterThanOrEqual(1);
@@ -236,8 +239,7 @@ describe("Listings", () => {
   it("PATCH /listings/:id lets the owning farmer close a listing", async () => {
     const res = await request(app)
       .patch(`/listings/${listingId}`)
-      .set("x-user-id", farmerUserId)
-      .set("x-user-role", "farmer")
+      .set("Authorization", "Bearer " + authToken(farmerUserId, "farmer"))
       .send({
         status: "sold",
       });
@@ -249,8 +251,10 @@ describe("Listings", () => {
   it("PATCH /listings/:id blocks a farmer who does not own the listing", async () => {
     const res = await request(app)
       .patch(`/listings/${listingId}`)
-      .set("x-user-id", secondFarmerUserId)
-      .set("x-user-role", "farmer")
+      .set(
+        "Authorization",
+        "Bearer " + authToken(secondFarmerUserId, "farmer")
+      )
       .send({
         status: "sold",
       });
@@ -261,8 +265,7 @@ describe("Listings", () => {
   it("POST /listings/:id/contact logs a buyer contact", async () => {
     const res = await request(app)
       .post(`/listings/${listingId}/contact`)
-      .set("x-user-id", buyerUserId)
-      .set("x-user-role", "buyer")
+      .set("Authorization", "Bearer " + authToken(buyerUserId, "buyer"))
       .send({
         channel: "whatsapp",
       });

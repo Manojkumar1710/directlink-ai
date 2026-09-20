@@ -64,12 +64,14 @@ create table if not exists price_references (
 -- 6. LISTINGS
 create table if not exists listings (
    id           uuid primary key,
-   farmer_id    uuid not null
-      references farmer_profiles ( id )
-         on delete cascade,
-   product_id   varchar(50) not null
-      references products ( id ),
-   quantity     numeric not null,
+  farmer_id    uuid not null
+     references farmer_profiles ( id )
+        on delete cascade,
+  product_id   varchar(50) not null
+     references products ( id ),
+  region       varchar(100),
+  unit         varchar(20),
+  quantity     numeric not null,
    asking_price numeric not null,
    status       varchar(20) not null default 'active' check ( status in ( 'active',
                                                                     'sold',
